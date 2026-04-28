@@ -154,3 +154,63 @@ export const exportCSV = async (req, res) => {
         });
     }
 };
+
+export const getOwnerAnalytics = async (req, res) => {
+    const { messId } = req.params;
+
+    try {
+        // 1. Get Overall Mess Stats (including NLP Sentiments)
+        const [overallStats] = await db.query(
+            `SELECT 
+                COUNT(*) as total_reviews, 
+                COALESCE(AVG(rating_value), 0) as avg_rating,
+                SUM(CASE WHEN sentiment = 'Positive' THEN 1 ELSE 0 END) as positive_count,
+                SUM(CASE WHEN sentiment = 'Negative' THEN 1 ELSE 0 END) as negative_count
+             FROM ratings 
+             WHERE mess_id = ?`,
+            [messId]
+        );
+
+        // 2. Get Dish Performance (Top Rated Dishes & NLP)
+        const [dishStats] = await db.query(
+            `SELECT 
+                dm.dish_name, 
+                COALESCE(AVG(dr.rating_value), 0) as avg_rating, 
+                COUNT(dr.rating_id) as total_ratings,
+                SUM(CASE WHEN dr.sentiment = 'Positive' THEN 1 ELSE 0 END) as positive_reviews,
+                SUM(CASE WHEN dr.sentiment = 'Negative' THEN 1 ELSE 0 END) as negative_reviews
+             FROM daily_menus dm
+             LEFT JOIN dish_ratings dr ON dm.menu_id = dr.menu_id
+             WHERE dm.mess_id = ?
+             GROUP BY dm.menu_id, dm.dish_name
+             HAVING total_ratings > 0
+             ORDER BY avg_rating DESC
+             LIMIT 5`,
+            [messId]
+        );
+
+        // 3. Get Poll Engagement
+        const [pollStats] = await db.query(
+            `SELECT COUNT(uv.vote_id) as total_votes_cast
+             FROM polls p
+             JOIN user_votes uv ON p.poll_id = uv.poll_id
+             WHERE p.mess_id = ?`,
+            [messId]
+        );
+
+        res.json({
+            success: true,
+            data: {
+                overview: overallStats[0],
+                topDishes: dishStats,
+                engagement: {
+                    totalPollVotes: pollStats[0]?.total_votes_cast || 0
+                }
+            }
+        });
+
+    } catch (error) {
+        console.error('Error fetching owner analytics:', error);
+        res.status(500).json({ success: false, message: 'Server error fetching analytics' });
+    }
+};

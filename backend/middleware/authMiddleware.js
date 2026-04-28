@@ -34,3 +34,15 @@ export const authorizeRole = (...roles) => {
         next();
     };
 };
+
+// ==========================================
+// ADMIN AUTHORIZATION MIDDLEWARE
+// ==========================================
+export const authorizeAdmin = (req, res, next) => {
+    // Check if the decoded token (req.user) has the role of 'Admin'
+    if (req.user && req.user.role && req.user.role.toLowerCase() === 'admin') {
+        next(); // They are an admin, let them through!
+    } else {
+        res.status(403).json({ success: false, message: 'Access denied. Admin privileges required.' });
+    }
+};

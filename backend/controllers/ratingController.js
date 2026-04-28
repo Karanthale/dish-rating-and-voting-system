@@ -1,4 +1,7 @@
 import db from '../config/db.js';
+import Sentiment from 'sentiment';  //Import the NLP library
+
+const sentiment = new Sentiment(); // Initialize the NLP engine
 
 export const createOrUpdateRating = async (req, res) => {
     const { mess_id, rating_value, feedback } = req.body;
@@ -193,5 +196,76 @@ export const compareMesses = async (req, res) => {
             message: 'Failed to compare messes',
             error: error.message
         });
+    }
+};
+// Fetch today's menu so students can see what to rate
+export const getTodaysMenu = async (req, res) => {
+    const { messId } = req.params;
+    try {
+        const [menu] = await db.query(
+            'SELECT menu_id, dish_name, is_out_of_stock FROM daily_menus WHERE mess_id = ? AND serve_date = CURDATE()',
+            [messId]
+        );
+        res.json({ success: true, data: menu });
+    } catch (error) {
+        console.error('Error fetching daily menu:', error);
+        res.status(500).json({ success: false, message: 'Server error fetching menu' });
+    }
+};
+
+// Submit a dish rating (with +10 Points Gamification and NLP!)
+export const submitDishRating = async (req, res) => {
+    const { menuId, ratingValue, reviewText } = req.body;
+    // Bulletproof user ID check
+    const userId = req.user.userId || req.user.id || req.user.user_id;
+
+    // Basic validation
+    if (!menuId || !ratingValue || ratingValue < 1 || ratingValue > 5) {
+        return res.status(400).json({ success: false, message: 'Please provide a valid rating between 1 and 5 stars.' });
+    }
+
+    // ==========================================
+    // NLP SENTIMENT ANALYSIS
+    // ==========================================
+    let reviewSentiment = 'Neutral';
+    
+    if (reviewText && reviewText.trim() !== '') {
+        const result = sentiment.analyze(reviewText);
+        
+        // 🚀 Print the AI's math to your VS Code terminal!
+        console.log(`\n🤖 AI analyzed: "${reviewText}"`);
+        console.log(`📊 Calculated Score: ${result.score}`);
+        
+        // Made the threshold more sensitive (> 0 instead of > 1)
+        if (result.score > 0) {
+            reviewSentiment = 'Positive';
+        } else if (result.score < 0) {
+            reviewSentiment = 'Negative';
+        }
+    }
+    // ==========================================
+
+    try {
+        // A. Insert the rating AND the new sentiment into the database
+        // (Make sure this has 5 question marks!)
+        await db.query(
+            'INSERT INTO dish_ratings (menu_id, user_id, rating_value, review_text, sentiment) VALUES (?, ?, ?, ?, ?)',
+            [menuId, userId, ratingValue, reviewText || '', reviewSentiment]
+        );
+
+        // B. GAMIFICATION: Award 10 points
+        await db.query(
+            'UPDATE users SET points = points + 10 WHERE user_id = ?',
+            [userId]
+        );
+
+        res.json({ success: true, message: 'Review submitted! +10 Points 🌟' });
+
+    } catch (error) {
+        if (error.code === 'ER_DUP_ENTRY') {
+            return res.status(400).json({ success: false, message: 'You have already rated this dish today.' });
+        }
+        console.error('Error submitting dish rating:', error);
+        res.status(500).json({ success: false, message: 'Server error while submitting rating.' });
     }
 };

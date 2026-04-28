@@ -28,9 +28,9 @@ export const signup = async (req, res) => {
             [name, email, hashedPassword, role]
         );
 
-        // Generate token
+        // FIXED: Replaced 'user.email' with just 'email' since 'user' doesn't exist yet!
         const token = jwt.sign(
-            { userId: result.insertId, email, role },
+            { userId: result.insertId, email: email, role: role, mess_id: null },
             process.env.JWT_SECRET,
             { expiresIn: process.env.JWT_EXPIRE }
         );
@@ -44,7 +44,8 @@ export const signup = async (req, res) => {
                     user_id: result.insertId,
                     name,
                     email,
-                    role
+                    role,
+                    mess_id: null
                 }
             }
         });
@@ -63,7 +64,10 @@ export const login = async (req, res) => {
 
     try {
         const [users] = await db.query(
-            'SELECT user_id, name, email, password, role FROM users WHERE email = ?',
+            `SELECT u.user_id, u.name, u.email, u.password, u.role, u.status, u.mess_id, m.name as mess_name 
+             FROM users u 
+             LEFT JOIN messes m ON u.mess_id = m.mess_id 
+             WHERE u.email = ?`,
             [email]
         );
 
@@ -84,8 +88,22 @@ export const login = async (req, res) => {
             });
         }
 
+        if (user.role.toLowerCase() === 'owner' && user.status === 'pending') {
+            return res.status(403).json({ 
+                success: false, 
+                message: 'Account pending approval. Please contact the administrator.' 
+            });
+        }
+        
+        if (user.role.toLowerCase() === 'owner' && user.status === 'rejected') {
+            return res.status(403).json({ 
+                success: false, 
+                message: 'Account application rejected.' 
+            });
+        }
+
         const token = jwt.sign(
-            { userId: user.user_id, email: user.email, role: user.role },
+            { userId: user.user_id, email: user.email, role: user.role, mess_id: user.mess_id, mess_name: user.mess_name },
             process.env.JWT_SECRET,
             { expiresIn: process.env.JWT_EXPIRE }
         );
@@ -99,7 +117,9 @@ export const login = async (req, res) => {
                     user_id: user.user_id,
                     name: user.name,
                     email: user.email,
-                    role: user.role
+                    role: user.role,
+                    mess_id: user.mess_id,
+                    mess_name: user.mess_name // <--- THIS WAS THE MISSING PIECE!
                 }
             }
         });
@@ -113,30 +133,57 @@ export const login = async (req, res) => {
     }
 };
 
+// ==========================================
+// GET USER PROFILE & GAMIFICATION STATS
+// ==========================================
 export const getProfile = async (req, res) => {
     try {
         const [users] = await db.query(
-            'SELECT user_id, name, email, role, created_at FROM users WHERE user_id = ?',
+            'SELECT user_id, name, email, role, points, created_at FROM users WHERE user_id = ?',
             [req.user.userId]
         );
 
         if (users.length === 0) {
-            return res.status(404).json({
-                success: false,
-                message: 'User not found'
-            });
+            return res.status(404).json({ success: false, message: 'User not found' });
+        }
+
+        const user = users[0];
+        const points = user.points || 0;
+
+        let badge = "Newbie";
+        let nextBadge = "Food Critic";
+        let pointsNeeded = 50;
+        let progress = (points / 50) * 100;
+
+        if (points >= 150) {
+            badge = "🏆 Top Foodie";
+            nextBadge = "Max Level Achieved!";
+            pointsNeeded = 0;
+            progress = 100;
+        } else if (points >= 50) {
+            badge = "⭐ Food Critic";
+            nextBadge = "Top Foodie";
+            pointsNeeded = 150 - points;
+            progress = ((points - 50) / 100) * 100;
+        } else {
+            badge = "🌱 Newbie";
+            pointsNeeded = 50 - points;
         }
 
         res.json({
             success: true,
-            data: users[0]
+            data: {
+                ...user,
+                gamification: {
+                    badge,
+                    nextBadge,
+                    pointsNeeded,
+                    progressPercentage: Math.round(progress)
+                }
+            }
         });
     } catch (error) {
-        res.status(500).json({
-            success: false,
-            message: 'Failed to fetch profile',
-            error: error.message
-        });
+        res.status(500).json({ success: false, message: 'Failed to fetch profile', error: error.message });
     }
 };
 
@@ -159,5 +206,71 @@ export const updateProfile = async (req, res) => {
             message: 'Failed to update profile',
             error: error.message
         });
+    }
+};
+
+// ==========================================
+// ADMIN DASHBOARD - FETCH PENDING OWNERS
+// ==========================================
+export const getPendingOwners = async (req, res) => {
+    try {
+        const [owners] = await db.query(
+            'SELECT user_id, name, email, created_at FROM users WHERE LOWER(role) = "owner" AND status = "pending" ORDER BY created_at ASC'
+        );
+        res.json({ success: true, data: owners });
+    } catch (error) {
+        console.error("Error fetching pending owners:", error);
+        res.status(500).json({ success: false, message: "Server error fetching pending accounts." });
+    }
+};
+
+// ==========================================
+// ADMIN DASHBOARD - APPROVE/REJECT OWNER
+// ==========================================
+export const updateOwnerStatus = async (req, res) => {
+    const { targetUserId, newStatus, messId } = req.body; 
+
+    if (!['approved', 'rejected'].includes(newStatus)) {
+        return res.status(400).json({ success: false, message: "Invalid status update" });
+    }
+
+    try {
+        if (newStatus === 'approved') {
+            if (!messId) return res.status(400).json({ success: false, message: "A Mess ID is required for approval." });
+            
+            await db.query(
+                'UPDATE users SET status = ?, mess_id = ? WHERE user_id = ? AND LOWER(role) = "owner"', 
+                [newStatus, messId, targetUserId]
+            );
+        } else {
+            await db.query(
+                'UPDATE users SET status = ? WHERE user_id = ? AND LOWER(role) = "owner"', 
+                [newStatus, targetUserId]
+            );
+        }
+        
+        res.json({ success: true, message: `Owner account ${newStatus} successfully.` });
+    } catch (error) {
+        console.error("Error updating owner status:", error);
+        res.status(500).json({ success: false, message: "Server error updating account status." });
+    }
+};
+
+// ==========================================
+// ADMIN DASHBOARD - FETCH ACTIVE ASSIGNMENTS
+// ==========================================
+export const getActiveOwners = async (req, res) => {
+    try {
+        const [owners] = await db.query(
+            `SELECT u.user_id, u.name as owner_name, u.email, m.name as mess_name 
+             FROM users u 
+             JOIN messes m ON u.mess_id = m.mess_id 
+             WHERE LOWER(u.role) = 'owner' AND u.status = 'approved'
+             ORDER BY m.name ASC`
+        );
+        res.json({ success: true, data: owners });
+    } catch (error) {
+        console.error("Error fetching active owners:", error);
+        res.status(500).json({ success: false, message: "Server error fetching active assignments." });
     }
 };

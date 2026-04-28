@@ -38,10 +38,35 @@ const Auth = () => {
             const response = await API.post(endpoint, payload);
 
             if (response.success) {
-                setAuthData(response.data.token, response.data.user);
-                const redirectPath = response.data.user.role === 'admin' ? '/admin' : '/dashboard';
-                navigate(redirectPath);
-            }
+                // 1. Explicitly save EVERYTHING to LocalStorage
+                localStorage.setItem('token', response.data.token);
+                localStorage.setItem('userRole', response.data.user.role);
+                localStorage.setItem('userName', response.data.user.name); 
+                
+                // NEW: Save the entire user object so the Dashboard can read the mess_id!
+                localStorage.setItem('user', JSON.stringify(response.data.user));
+                
+                // (Also run your auth utility just to be safe)
+                if (typeof setAuthData === 'function') {
+                    setAuthData(response.data.token, response.data.user);
+                } 
+
+    // 2. The Smart Routing Logic
+    let redirectPath = '/dashboard'; // Default for students
+    
+    if (response.data.user.role === 'admin') {
+        redirectPath = '/admin';
+    } else if (response.data.user.role === 'owner') {
+        redirectPath = '/owner-dashboard';
+    }
+
+    // 3. Optional: A tiny delay so LocalStorage fully updates before navigating
+    setTimeout(() => {
+        navigate(redirectPath);
+        // Force the Navbar to refresh its state by reloading the window
+        window.location.reload(); 
+    }, 100);
+}
         } catch (err) {
             setError(err.message || 'Authentication failed. Please try again.');
         } finally {
@@ -69,14 +94,14 @@ const Auth = () => {
                                 Full Name
                             </label>
                             <div className="relative">
-                                <FiUser className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+                                <FiUser className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 pointer-events-none" />
                                 <input
                                     type="text"
                                     name="name"
                                     value={formData.name}
                                     onChange={handleChange}
                                     className="input-field pl-10"
-                                    placeholder="John Doe"
+                                    placeholder="   John Doe"
                                     required
                                 />
                             </div>
@@ -95,7 +120,7 @@ const Auth = () => {
                                 value={formData.email}
                                 onChange={handleChange}
                                 className="input-field pl-10"
-                                placeholder="you@college.edu"
+                                placeholder="   you@college.edu"
                                 required
                             />
                         </div>
@@ -113,7 +138,7 @@ const Auth = () => {
                                 value={formData.password}
                                 onChange={handleChange}
                                 className="input-field pl-10"
-                                placeholder="••••••••"
+                                placeholder="   ••••••••"
                                 required
                             />
                         </div>
@@ -131,7 +156,7 @@ const Auth = () => {
                                 className="input-field"
                             >
                                 <option value="student">Student</option>
-                                <option value="admin">Admin</option>
+                                <option value="Owner">Owner</option>
                             </select>
                         </div>
                     )}

@@ -3,9 +3,10 @@ import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
 import Modal from '../components/Modal';
 import API from '../utils/api';
-import { FiTrendingUp, FiUsers, FiStar, FiDownload, FiPlus, FiEdit2, FiTrash2 } from 'react-icons/fi';
+import { FiTrendingUp, FiUsers, FiStar, FiDownload, FiPlus, FiEdit2, FiTrash2, FiShield } from 'react-icons/fi';
 
 const AdminDashboard = () => {
+    // Existing State
     const [analytics, setAnalytics] = useState(null);
     const [messes, setMesses] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -19,6 +20,17 @@ const AdminDashboard = () => {
         is_active: true
     });
 
+    // Pending Owners & Messages State
+    const [pendingOwners, setPendingOwners] = useState([]);
+    const [message, setMessage] = useState('');
+
+    // Assignment State
+    const [assigningMessFor, setAssigningMessFor] = useState(null);
+    const [selectedMessId, setSelectedMessId] = useState('');
+
+    // NEW: Active Assignments State
+    const [activeAssignments, setActiveAssignments] = useState([]);
+
     useEffect(() => {
         fetchData();
     }, []);
@@ -28,9 +40,12 @@ const AdminDashboard = () => {
         setError('');
         
         try {
-            const [analyticsRes, messesRes] = await Promise.all([
+            // Updated Promise.all to fetch the active assignments as well
+            const [analyticsRes, messesRes, pendingRes, activeRes] = await Promise.all([
                 API.get('/analytics').catch(err => ({ success: false, data: null })),
-                API.get('/mess').catch(err => ({ success: false, data: [] }))
+                API.get('/mess').catch(err => ({ success: false, data: [] })),
+                API.get('/auth/admin/pending-owners').catch(err => ({ success: false, data: [] })),
+                API.get('/auth/admin/active-owners').catch(err => ({ success: false, data: [] }))
             ]);
 
             if (analyticsRes.success) {
@@ -40,10 +55,47 @@ const AdminDashboard = () => {
             if (messesRes.success) {
                 setMesses(messesRes.data);
             }
+
+            if (pendingRes.success) {
+                setPendingOwners(pendingRes.data || []);
+            }
+
+            // Save the newly fetched active assignments
+            if (activeRes.success) {
+                setActiveAssignments(activeRes.data || []);
+            }
+
         } catch (err) {
             setError('Failed to load dashboard data: ' + err.message);
         } finally {
             setLoading(false);
+        }
+    };
+
+    const handleStatusUpdate = async (userId, newStatus, messId = null) => {
+        if (newStatus === 'approved' && !messId) {
+            alert("Please select a mess to assign to this owner.");
+            return;
+        }
+
+        try {
+            const response = await API.patch('/auth/admin/update-status', {
+                targetUserId: userId,
+                newStatus: newStatus,
+                messId: messId 
+            });
+
+            if (response.success) {
+                setMessage(`Account successfully ${newStatus}!`);
+                setPendingOwners(prevOwners => prevOwners.filter(owner => owner.user_id !== userId));
+                setAssigningMessFor(null); 
+                setSelectedMessId('');
+                fetchData(); // Refresh all tables after status update
+                setTimeout(() => setMessage(''), 3000);
+            }
+        } catch (error) {
+            console.error(`Failed to ${newStatus} owner:`, error);
+            alert(`Failed to update status. Please check your console.`);
         }
     };
 
@@ -100,7 +152,6 @@ const AdminDashboard = () => {
 
     const handleSubmitMess = async (e) => {
         e.preventDefault();
-        
         try {
             if (editingMess) {
                 await API.put(`/mess/${editingMess.mess_id}`, formData);
@@ -109,7 +160,6 @@ const AdminDashboard = () => {
                 await API.post('/mess', formData);
                 alert('Mess created successfully!');
             }
-            
             fetchData();
             handleCloseModal();
         } catch (error) {
@@ -119,7 +169,6 @@ const AdminDashboard = () => {
 
     const handleDeleteMess = async (messId) => {
         if (!confirm('Are you sure you want to delete this mess?')) return;
-
         try {
             await API.delete(`/mess/${messId}`);
             alert('Mess deleted successfully!');
@@ -188,6 +237,13 @@ const AdminDashboard = () => {
                     </button>
                 </div>
 
+                {/* Global Success Message for Approvals */}
+                {message && (
+                    <div className="bg-green-100 border border-green-200 text-green-700 px-4 py-3 rounded-lg font-medium animate-pulse mb-6">
+                        ✅ {message}
+                    </div>
+                )}
+
                 {/* Stats Cards */}
                 <div className="grid md:grid-cols-4 gap-6 mb-8">
                     <div className="card bg-gradient-to-br from-primary-500 to-primary-600 text-white">
@@ -199,7 +255,6 @@ const AdminDashboard = () => {
                             <FiTrendingUp className="text-5xl text-primary-200" />
                         </div>
                     </div>
-
                     <div className="card bg-gradient-to-br from-blue-500 to-blue-600 text-white">
                         <div className="flex items-center justify-between">
                             <div>
@@ -209,7 +264,6 @@ const AdminDashboard = () => {
                             <FiUsers className="text-5xl text-blue-200" />
                         </div>
                     </div>
-
                     <div className="card bg-gradient-to-br from-yellow-500 to-yellow-600 text-white">
                         <div className="flex items-center justify-between">
                             <div>
@@ -219,7 +273,6 @@ const AdminDashboard = () => {
                             <FiStar className="text-5xl text-yellow-200" />
                         </div>
                     </div>
-
                     <div className="card bg-gradient-to-br from-green-500 to-green-600 text-white">
                         <div className="flex items-center justify-between">
                             <div>
@@ -233,6 +286,147 @@ const AdminDashboard = () => {
                     </div>
                 </div>
 
+                {/* ========================================== */}
+                {/* Pending Approvals Widget                   */}
+                {/* ========================================== */}
+                <div className="card mb-8 overflow-hidden !p-0">
+                    <div className="bg-gray-800 text-white p-4 flex justify-between items-center rounded-t-xl">
+                        <h2 className="text-lg font-bold flex items-center">
+                            <FiShield className="mr-2" /> Pending Contractor Approvals
+                        </h2>
+                        {pendingOwners.length > 0 && (
+                            <span className="bg-red-500 text-white text-xs font-bold px-2.5 py-1 rounded-full">
+                                {pendingOwners.length} Pending
+                            </span>
+                        )}
+                    </div>
+
+                    <div>
+                        {pendingOwners.length === 0 ? (
+                            <div className="p-8 text-center text-gray-500 italic">
+                                No pending accounts. You are all caught up!
+                            </div>
+                        ) : (
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-left border-collapse">
+                                    <thead>
+                                        <tr className="bg-gray-50 text-gray-500 text-sm border-b">
+                                            <th className="px-6 py-4 font-semibold">Applicant Name</th>
+                                            <th className="px-6 py-4 font-semibold">Email Address</th>
+                                            <th className="px-6 py-4 font-semibold">Application Date</th>
+                                            <th className="px-6 py-4 font-semibold text-right">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {pendingOwners.map((owner) => (
+                                            <tr key={owner.user_id} className="border-b last:border-0 hover:bg-gray-50 transition-colors">
+                                                <td className="px-6 py-4 font-medium text-gray-800">{owner.name}</td>
+                                                <td className="px-6 py-4 text-gray-600">{owner.email}</td>
+                                                <td className="px-6 py-4 text-gray-500 text-sm">
+                                                    {new Date(owner.created_at).toLocaleDateString()}
+                                                </td>
+                                                <td className="px-6 py-4 text-right">
+                                                    {assigningMessFor === owner.user_id ? (
+                                                        <div className="flex items-center justify-end space-x-2">
+                                                            <select 
+                                                                value={selectedMessId}
+                                                                onChange={(e) => setSelectedMessId(e.target.value)}
+                                                                className="border border-gray-300 rounded-lg px-2 py-1 text-sm focus:ring-2 focus:ring-primary-500 outline-none"
+                                                            >
+                                                                <option value="">Select a Mess...</option>
+                                                                {messes.map(m => (
+                                                                    <option key={m.mess_id} value={m.mess_id}>{m.name}</option>
+                                                                ))}
+                                                            </select>
+                                                            <button 
+                                                                onClick={() => handleStatusUpdate(owner.user_id, 'approved', selectedMessId)}
+                                                                className="bg-green-600 text-white font-bold px-3 py-1.5 rounded-lg text-sm hover:bg-green-700 transition-colors"
+                                                            >
+                                                                Confirm
+                                                            </button>
+                                                            <button 
+                                                                onClick={() => setAssigningMessFor(null)}
+                                                                className="bg-gray-200 text-gray-700 font-bold px-3 py-1.5 rounded-lg text-sm hover:bg-gray-300 transition-colors"
+                                                            >
+                                                                Cancel
+                                                            </button>
+                                                        </div>
+                                                    ) : (
+                                                        <div className="space-x-2">
+                                                            <button 
+                                                                onClick={() => setAssigningMessFor(owner.user_id)}
+                                                                className="bg-green-50 text-green-600 border border-green-200 hover:bg-green-100 hover:border-green-300 font-bold px-4 py-1.5 rounded-lg text-sm transition-all"
+                                                            >
+                                                                Approve
+                                                            </button>
+                                                            <button 
+                                                                onClick={() => handleStatusUpdate(owner.user_id, 'rejected')}
+                                                                className="bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 hover:border-red-300 font-bold px-4 py-1.5 rounded-lg text-sm transition-all"
+                                                            >
+                                                                Reject
+                                                            </button>
+                                                        </div>
+                                                    )}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                {/* ========================================== */}
+                {/* ACTIVE MESS ASSIGNMENTS (NEW WIDGET)       */}
+                {/* ========================================== */}
+                <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mb-8">
+                    <div className="bg-gray-800 px-6 py-4 border-b border-gray-700">
+                        <h2 className="text-lg font-bold text-white flex items-center">
+                            <span className="mr-2">🔗</span> Active Mess Assignments
+                        </h2>
+                    </div>
+                    
+                    {activeAssignments.length === 0 ? (
+                        <div className="p-8 text-center text-gray-500 italic">
+                            No active owners assigned to any messes yet.
+                        </div>
+                    ) : (
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-left border-collapse">
+                                <thead>
+                                    <tr className="bg-gray-50 border-b text-gray-500 text-sm">
+                                        <th className="px-6 py-3 font-semibold">Dining Hall / Mess</th>
+                                        <th className="px-6 py-3 font-semibold">Assigned Manager</th>
+                                        <th className="px-6 py-3 font-semibold">Contact Email</th>
+                                        <th className="px-6 py-3 font-semibold text-center">Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-100">
+                                    {activeAssignments.map((assignment) => (
+                                        <tr key={assignment.user_id} className="hover:bg-gray-50 transition-colors">
+                                            <td className="px-6 py-4 font-bold text-gray-800">
+                                                {assignment.mess_name}
+                                            </td>
+                                            <td className="px-6 py-4 font-medium text-gray-700">
+                                                {assignment.owner_name}
+                                            </td>
+                                            <td className="px-6 py-4 text-sm text-gray-500">
+                                                {assignment.email}
+                                            </td>
+                                            <td className="px-6 py-4 text-center">
+                                                <span className="bg-green-100 text-green-700 px-3 py-1 rounded-full text-xs font-bold border border-green-200">
+                                                    Active
+                                                </span>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
+                </div>
+
                 {/* Rating Distribution - Visual Bars */}
                 {distribution.length > 0 && (
                     <div className="card mb-8">
@@ -242,11 +436,7 @@ const AdminDashboard = () => {
                                 const maxCount = Math.max(...distribution.map(d => d.count));
                                 const percentage = maxCount > 0 ? (item.count / maxCount) * 100 : 0;
                                 const colors = {
-                                    5: 'bg-green-500',
-                                    4: 'bg-blue-500',
-                                    3: 'bg-yellow-500',
-                                    2: 'bg-orange-500',
-                                    1: 'bg-red-500'
+                                    5: 'bg-green-500', 4: 'bg-blue-500', 3: 'bg-yellow-500', 2: 'bg-orange-500', 1: 'bg-red-500'
                                 };
                                 
                                 return (
@@ -259,9 +449,7 @@ const AdminDashboard = () => {
                                                 className={`${colors[item.rating_value]} h-8 rounded-full transition-all duration-500 flex items-center justify-end pr-3`}
                                                 style={{ width: `${percentage}%` }}
                                             >
-                                                <span className="text-white font-bold text-sm">
-                                                    {item.count}
-                                                </span>
+                                                <span className="text-white font-bold text-sm">{item.count}</span>
                                             </div>
                                         </div>
                                         <div className="w-16 text-sm text-gray-600 text-right">
@@ -345,10 +533,8 @@ const AdminDashboard = () => {
                                             <td className="px-4 py-3 font-semibold">{mess.name}</td>
                                             <td className="px-4 py-3 text-gray-600">{mess.location}</td>
                                             <td className="px-4 py-3 text-center">
-                                                <span className={`px-3 py-1 rounded-full text-sm ${
-                                                    mess.is_active 
-                                                        ? 'bg-green-100 text-green-700' 
-                                                        : 'bg-red-100 text-red-700'
+                                                <span className={`px-3 py-1 rounded-full text-sm font-bold border ${
+                                                    mess.is_active ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-700 border-red-200'
                                                 }`}>
                                                     {mess.is_active ? 'Active' : 'Inactive'}
                                                 </span>
@@ -356,18 +542,10 @@ const AdminDashboard = () => {
                                             <td className="px-4 py-3 text-center">{mess.total_ratings || 0}</td>
                                             <td className="px-4 py-3">
                                                 <div className="flex items-center justify-center space-x-2">
-                                                    <button
-                                                        onClick={() => handleOpenModal(mess)}
-                                                        className="text-blue-600 hover:text-blue-800 p-2"
-                                                        title="Edit"
-                                                    >
+                                                    <button onClick={() => handleOpenModal(mess)} className="text-blue-600 hover:text-blue-800 p-2" title="Edit">
                                                         <FiEdit2 />
                                                     </button>
-                                                    <button
-                                                        onClick={() => handleDeleteMess(mess.mess_id)}
-                                                        className="text-red-600 hover:text-red-800 p-2"
-                                                        title="Delete"
-                                                    >
+                                                    <button onClick={() => handleDeleteMess(mess.mess_id)} className="text-red-600 hover:text-red-800 p-2" title="Delete">
                                                         <FiTrash2 />
                                                     </button>
                                                 </div>
@@ -417,56 +595,27 @@ const AdminDashboard = () => {
                 <form onSubmit={handleSubmitMess} className="space-y-4">
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">Mess Name</label>
-                        <input
-                            type="text"
-                            value={formData.name}
-                            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                            className="input-field"
-                            required
-                        />
+                        <input type="text" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} className="input-field" required />
                     </div>
-
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">Location</label>
-                        <input
-                            type="text"
-                            value={formData.location}
-                            onChange={(e) => setFormData({ ...formData, location: e.target.value })}
-                            className="input-field"
-                            required
-                        />
+                        <input type="text" value={formData.location} onChange={(e) => setFormData({ ...formData, location: e.target.value })} className="input-field" required />
                     </div>
-
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">Description</label>
-                        <textarea
-                            value={formData.description}
-                            onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                            className="input-field min-h-[100px] resize-none"
-                        />
+                        <textarea value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} className="input-field min-h-[100px] resize-none" />
                     </div>
-
                     {editingMess && (
                         <div>
                             <label className="flex items-center space-x-2">
-                                <input
-                                    type="checkbox"
-                                    checked={formData.is_active}
-                                    onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
-                                    className="w-4 h-4 text-primary-600 rounded"
-                                />
+                                <input type="checkbox" checked={formData.is_active} onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })} className="w-4 h-4 text-primary-600 rounded" />
                                 <span className="text-sm font-medium text-gray-700">Active</span>
                             </label>
                         </div>
                     )}
-
                     <div className="flex space-x-3">
-                        <button type="submit" className="btn-primary flex-1">
-                            {editingMess ? 'Update' : 'Create'}
-                        </button>
-                        <button type="button" onClick={handleCloseModal} className="btn-secondary flex-1">
-                            Cancel
-                        </button>
+                        <button type="submit" className="btn-primary flex-1">{editingMess ? 'Update' : 'Create'}</button>
+                        <button type="button" onClick={handleCloseModal} className="btn-secondary flex-1">Cancel</button>
                     </div>
                 </form>
             </Modal>

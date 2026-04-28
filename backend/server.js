@@ -1,15 +1,15 @@
+import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
-import dotenv from 'dotenv';
 import rateLimit from 'express-rate-limit';
 
 import authRoutes from './routes/authRoutes.js';
 import messRoutes from './routes/messRoutes.js';
 import ratingRoutes from './routes/ratingRoutes.js';
 import analyticsRoutes from './routes/analyticsRoutes.js';
-
-dotenv.config();
+import pollRoutes from './routes/pollRoutes.js'; // <-- NEW: Imported the poll routes
+import menuRoutes from './routes/menuRoutes.js';
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -83,6 +83,8 @@ app.use('/api/auth', authRoutes);
 app.use('/api/mess', messRoutes);
 app.use('/api/rate', ratingRoutes);
 app.use('/api/analytics', analyticsRoutes);
+app.use('/api/polls', pollRoutes); // <-- NEW: Registered the poll routes
+app.use('/api/menu', menuRoutes);
 
 // Health Check
 app.get('/health', (req, res) => {
@@ -105,7 +107,8 @@ app.get('/', (req, res) => {
             auth: '/api/auth',
             mess: '/api/mess',
             ratings: '/api/rate',
-            analytics: '/api/analytics'
+            analytics: '/api/analytics',
+            polls: '/api/polls' // <-- NEW: Added polls to your API documentation response
         }
     });
 });

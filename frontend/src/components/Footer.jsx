@@ -12,7 +12,7 @@ const Footer = () => {
                         <span>for better mess food</span>
                     </p>
                     <p className="text-gray-500 text-xs mt-2 md:mt-0">
-                        &copy; {new Date().getFullYear()} Rate My Mess. All rights reserved.
+                        &copy; {new Date().getFullYear()} Rasoi Talk. All rights reserved.
                     </p>
                 </div>
             </div>

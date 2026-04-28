@@ -29,7 +29,7 @@ export const signupValidation = [
         .withMessage('Password must contain uppercase, lowercase, number, and special character'),
     body('role')
         .optional()
-        .isIn(['student', 'admin']).withMessage('Invalid role')
+        .isIn(['student', 'admin', 'Student', 'Admin', 'Owner', 'owner']).withMessage('Invalid role')
 ];
 
 export const loginValidation = [

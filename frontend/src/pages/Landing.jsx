@@ -14,7 +14,7 @@ const Landing = () => {
                         <FiStar className="text-6xl text-primary-600" />
                     </div>
                     <h1 className="text-5xl md:text-6xl font-bold text-gray-900 mb-6">
-                        Rate My Mess - Your Voice , Our Taste
+                        Rasoi Talk
                     </h1>
                     <p className="text-xl text-gray-600 mb-8">
                         Help improve your college dining experience. Rate, review, and compare mess.
@@ -72,7 +72,7 @@ const Landing = () => {
             {/* Footer */}
             <footer className="bg-white border-t border-gray-200 py-6 mt-20">
                 <div className="container mx-auto px-4 text-center text-gray-600">
-                    <p>&copy; 2025 Rate My Mess. Making college dining better.</p>
+                    <p>&copy; 2025 Rasoi Talk. Making college dining better.</p>
                 </div>
             </footer>
         </div>
