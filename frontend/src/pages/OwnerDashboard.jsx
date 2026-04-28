@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import API from '../utils/api'; 
 import CreatePollForm from "../components/CreatePollForm";
+import PollWidget from "../components/PollWidget";
 import Navbar from '../components/Navbar';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { getAuthData } from '../utils/auth';
@@ -40,14 +41,38 @@ const OwnerDashboard = () => {
         }
     };
 
-    const fetchTodayMenu = async () => {
+   const fetchTodayMenu = async () => {
         try {
             const response = await API.get(`/menu/${messId}`);
-            if (response.success) {
-                setMenu(response.data || []);
+            
+            // 1. Let's print the ENTIRE response to see exactly what the backend sent!
+            console.log("FULL MENU RESPONSE:", response); 
+
+            // 2. Grab the data no matter what the backend named it
+            const actualData = response.data || response.menu || response.items || (Array.isArray(response) ? response : null);
+
+            if (actualData) {
+                let flattenedMenu = [];
+
+                const findDishes = (data) => {
+                    if (!data) return;
+                    if (Array.isArray(data)) {
+                        data.forEach(findDishes);
+                    } else if (typeof data === 'object' && data.dish_name) {
+                        flattenedMenu.push(data);
+                    } else if (typeof data === 'object') {
+                        Object.values(data).forEach(findDishes);
+                    }
+                };
+
+                findDishes(actualData);
+                setMenu(flattenedMenu);
+            } else {
+                setMenu([]);
             }
         } catch (error) {
             console.error("Error fetching menu:", error);
+            setMenu([]);
         }
     };
 
@@ -293,6 +318,15 @@ const OwnerDashboard = () => {
                                 <p className="text-gray-500 italic text-center py-6">No active dishes on the menu today.</p>
                             )}
                         </div>
+                        
+                        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                            <h3 className="text-lg font-bold mb-4 flex items-center">
+                                <span className="mr-2">📊</span> Live Poll Results
+                            </h3>
+                            {/* This is the same widget the students see! */}
+                            <PollWidget messId={messId} readOnly={true} /> 
+                        </div>
+
                     </div>
 
                     {/* Right Column: Polls & Form Section */}

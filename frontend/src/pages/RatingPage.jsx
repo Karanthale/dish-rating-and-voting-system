@@ -133,13 +133,13 @@ const RatingPage = () => {
         let startStr, endStr;
         if (mealType === 'Breakfast') {
             startStr = mess.breakfast_start || "07:00:00";
-            endStr = mess.breakfast_end || "10:30:00";
+            endStr = mess.breakfast_end || "11:30:00";
         } else if (mealType === 'Lunch') {
             startStr = mess.lunch_start || "12:00:00";
             endStr = mess.lunch_end || "15:00:00";
         } else if (mealType === 'Dinner') {
             startStr = mess.dinner_start || "19:00:00";
-            endStr = mess.dinner_end || "22:30:00";
+            endStr = mess.dinner_end || "10:45:00";
         }
 
         const startMinutes = parseTime(startStr);
@@ -237,9 +237,7 @@ const RatingPage = () => {
                             Rate Today's Menu
                         </h2>
 
-                        {/* ========================================== */}
                         {/* THE DIETARY FILTER BUTTONS                 */}
-                        {/* ========================================== */}
                         <div className="flex flex-wrap gap-2">
                             {['All', 'Veg', 'Non-Veg', 'Egg', 'Jain', 'Vegan'].map(tag => (
                                 <button
