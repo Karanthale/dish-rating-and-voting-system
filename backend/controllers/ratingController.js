@@ -247,7 +247,6 @@ export const submitDishRating = async (req, res) => {
 
     try {
         // A. Insert the rating AND the new sentiment into the database
-        // (Make sure this has 5 question marks!)
         await db.query(
             'INSERT INTO dish_ratings (menu_id, user_id, rating_value, review_text, sentiment) VALUES (?, ?, ?, ?, ?)',
             [menuId, userId, ratingValue, reviewText || '', reviewSentiment]
